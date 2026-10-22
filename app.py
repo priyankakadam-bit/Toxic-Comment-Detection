@@ -77,14 +77,6 @@ LABELS        = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identi
 LABEL_DISPLAY = ["Toxic", "Severe Toxic", "Obscene", "Threat", "Insult", "Identity Hate"]
 LABEL_COLORS  = ["#ff4d4d", "#ff6666", "#ff8c00", "#ff4488", "#cc77ff", "#44aaff"]
 
-EXAMPLES = {
-    "Clean comment": "This is a really well-written article. Thank you for sharing!",
-    "Mild insult":   "You're being completely ridiculous and childish right now.",
-    "Threat":        "I know where you live and I will make you regret this.",
-    "Identity hate": "People like you don't belong in this country.",
-    "Multi-label":   "You stupid idiot, go die. I hate people like you.",
-}
-
 # ── NLP tools ─────────────────────────────────────────────────────────────────
 @st.cache_resource
 def build_nlp_tools():
@@ -284,26 +276,26 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Example buttons
-st.markdown("**Try an example or type your own:**")
-cols     = st.columns(len(EXAMPLES))
-selected = None
-for col, (label, text) in zip(cols, EXAMPLES.items()):
-    if col.button(label, key=f"ex_{label}", use_container_width=True):
-        selected = text
+def clear_comment():
+    # Runs before the page re-renders, so the text area comes back empty
+    st.session_state["comment"] = ""
+
+st.markdown("**Type or paste a comment:**")
 
 # Text input
 user_input = st.text_area(
     "Comment",
-    value=selected or "",
+    key="comment",
     height=120,
     placeholder="Type or paste a comment here...",
     label_visibility="collapsed",
 )
 
-_, btn_col, _ = st.columns([2, 1, 2])
-with btn_col:
+_, run_col, clear_col, _ = st.columns([2, 1, 1, 2])
+with run_col:
     run = st.button("ANALYSE →", use_container_width=True)
+with clear_col:
+    st.button("CLEAR ✕", on_click=clear_comment, use_container_width=True)
 
 # Results
 if run and user_input.strip():
