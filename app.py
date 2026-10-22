@@ -174,42 +174,67 @@ def load_model():
     model_path = os.path.join(here, "model.pkl")
     vec_path   = os.path.join(here, "vectoriser.pkl")
 
+    load_error = None
     if os.path.isfile(model_path) and os.path.isfile(vec_path):
-        vec   = joblib.load(vec_path)
-        model = joblib.load(model_path)
-        mode  = "real"
-    else:
-        texts   = [row[0] for row in DEMO_DATA]
-        Y       = np.array([row[1] for row in DEMO_DATA], dtype=int)
-        cleaned = [clean_text(t, trantab, sw, lem, stm) for t in texts]
+        try:
+            vec   = joblib.load(vec_path)
+            model = joblib.load(model_path)
+            return vec, model, trantab, sw, lem, stm, "real", None
+        except Exception as e:
+            # Usually a scikit-learn version mismatch between your laptop and the server.
+            # Pin scikit-learn in requirements.txt to the version used in the notebook.
+            load_error = f"{type(e).__name__}: {e}"
 
-        vec   = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), sublinear_tf=True)
-        X     = vec.fit_transform(cleaned).toarray()
-        base  = LinearSVC(C=1.0, class_weight="balanced", max_iter=2000, random_state=42)
-        model = ClassifierChain(base, order="random", random_state=42)
-        model.fit(X, Y)
-        mode  = "demo"
+    # Fallback: tiny demo model (only ~60 sentences — expect poor accuracy)
+    texts   = [row[0] for row in DEMO_DATA]
+    Y       = np.array([row[1] for row in DEMO_DATA], dtype=int)
+    cleaned = [clean_text(t, trantab, sw, lem, stm) for t in texts]
 
-    return vec, model, trantab, sw, lem, stm, mode
+    vec   = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), sublinear_tf=True)
+    X     = vec.fit_transform(cleaned).toarray()
+    base  = LinearSVC(C=1.0, class_weight="balanced", max_iter=2000, random_state=42)
+    model = ClassifierChain(base, order="random", random_state=42)
+    model.fit(X, Y)
+    mode  = "demo"
 
-vec, model, trantab, sw, lem, stm, model_mode = load_model()
+    return vec, model, trantab, sw, lem, stm, mode, load_error
+
+vec, model, trantab, sw, lem, stm, model_mode, model_load_error = load_model()
 
 # ── Prediction ────────────────────────────────────────────────────────────────
+def chain_scores(model, X):
+    """
+    Raw SVM decision scores for every label, returned in LABEL order.
+
+    In a ClassifierChain, estimator k is trained on the original features PLUS
+    the 0/1 predictions of the k earlier labels in the chain. So each estimator
+    must be fed an input that grows by one column per step — passing plain X to
+    every estimator fails for all but the first one.
+    """
+    scores = [0.0] * len(LABELS)
+    X_aug  = X
+    for clf, label_ix in zip(model.estimators_, model.order_):
+        s = float(clf.decision_function(X_aug)[0])
+        scores[label_ix] = s
+        X_aug = np.hstack([X_aug, [[1.0 if s > 0 else 0.0]]])
+    return scores
+
 def predict(text: str):
-    cleaned    = clean_text(text, trantab, sw, lem, stm)
-    X          = vec.transform([cleaned]).toarray()
-    pred       = model.predict(X)[0].astype(int)
-    scores_raw = []
-    for clf in model.estimators_:
-        try:
-            scores_raw.append(float(clf.decision_function(X)[0]))
-        except Exception:
-            scores_raw.append(0.0)
-    ordered = [0.0] * 6
-    for chain_ix, label_ix in enumerate(model.order_):
-        ordered[label_ix] = scores_raw[chain_ix]
-    confidences = [round(float(1 / (1 + np.exp(-s))), 3) for s in ordered]
-    return pred, confidences
+    """Returns (preds, scores, n_known_terms)."""
+    cleaned = clean_text(text, trantab, sw, lem, stm)
+    X       = vec.transform([cleaned]).toarray()
+    n_known = int((X != 0).sum())
+
+    # No word of the comment is in the model's vocabulary: the input is an
+    # all-zero vector and the SVM would just return its bias, which is not a
+    # judgement about the text. Report it as clean instead of guessing.
+    if n_known == 0:
+        return np.zeros(len(LABELS), dtype=int), [0.0] * len(LABELS), 0
+
+    raw    = chain_scores(model, X)
+    preds  = np.array([1 if s > 0 else 0 for s in raw], dtype=int)  # same rule as model.predict
+    scores = [round(float(1 / (1 + np.exp(-s))), 3) for s in raw]
+    return preds, scores, n_known
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -221,6 +246,8 @@ with st.sidebar:
         st.success("Using your trained model (model.pkl) ✓")
     else:
         st.info("Demo mode — add model.pkl + vectoriser.pkl for full accuracy.")
+        if model_load_error:
+            st.error(f"model.pkl was found but could not be loaded:\n\n{model_load_error}")
 
     st.divider()
     st.markdown('<p class="sidebar-header">About</p>', unsafe_allow_html=True)
@@ -280,8 +307,12 @@ with btn_col:
 
 # Results
 if run and user_input.strip():
-    preds, confidences = predict(user_input.strip())
+    preds, confidences, n_known = predict(user_input.strip())
     st.markdown("---")
+
+    if n_known == 0:
+        st.info("None of the words in this comment appear in the model's vocabulary, "
+                "so there is nothing to score — treated as clean.")
 
     detected_keys  = [LABELS[i]        for i, p in enumerate(preds) if p == 1]
     detected_names = [LABEL_DISPLAY[i] for i, p in enumerate(preds) if p == 1]
@@ -308,7 +339,9 @@ if run and user_input.strip():
 
     left, right = st.columns([3, 2])
     with left:
-        st.markdown("**Confidence per label**")
+        st.markdown("**Score per label**")
+        st.caption("SVM decision score passed through a sigmoid; above 50% = label predicted. "
+                   "Not a calibrated probability.")
         for i, (lbl, conf) in enumerate(zip(LABEL_DISPLAY, confidences)):
             active      = preds[i] == 1
             color       = LABEL_COLORS[i] if active else "#333"
@@ -332,7 +365,7 @@ if run and user_input.strip():
         n_det    = int(preds.sum())
         dominant = LABEL_DISPLAY[int(np.argmax(confidences))] if n_det else "—"
         st.metric("Labels detected", f"{n_det} / 6")
-        st.metric("Max confidence",  f"{max(confidences)*100:.0f}%")
+        st.metric("Max score",       f"{max(confidences)*100:.0f}%")
         st.metric("Dominant label",  dominant)
 
     st.markdown("---")
@@ -355,8 +388,3 @@ if run and user_input.strip():
 
 elif run:
     st.warning("Please enter a comment first.")
-
-
-
-
-
