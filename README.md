@@ -106,7 +106,7 @@ pandas>=1.3
 numpy>=1.21
 matplotlib>=3.5
 seaborn>=0.12
-scikit-learn>=1.0
+scikit-learn==1.7.2
 nltk>=3.7
 ydata-profiling>=4.0
 scipy>=1.7
