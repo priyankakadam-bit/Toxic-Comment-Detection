@@ -1,22 +1,25 @@
 # Toxic Comment Detection
 ### Multi-Label Text Classification with NLP & Machine Learning
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.7.2-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![NLTK](https://img.shields.io/badge/NLTK-NLP-4EAA25?style=flat-square)](https://www.nltk.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Kaggle](https://img.shields.io/badge/Dataset-Kaggle-20BEFF?style=flat-square&logo=kaggle&logoColor=white)](https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge)
 
+**Live app:** https://toxic-comment-detection-01.streamlit.app/
+
 ---
 
 ## Overview
 
-Online platforms face the constant challenge of moderating harmful content at scale. This project builds a **multi-label toxic comment classifier** that simultaneously detects six types of harmful language in user-generated text — replicating the core task of the [Jigsaw Toxic Comment Classification Challenge](https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge).
+Online platforms have to moderate harmful content at scale. This project builds a **multi-label toxic comment classifier**
+that detects six types of harmful language at the same time, based on the
+[Jigsaw Toxic Comment Classification Challenge](https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge).
 
-Unlike single-label classification, a comment can belong to **multiple categories at once** — for example, both *obscene* and *insulting* at the same time.
-
-A fully interactive **Streamlit web app** is included so you can test the classifier on any comment in real time.
+A comment can belong to **several categories at once**, for example both *obscene* and *insulting*.
+The **Streamlit app** scores any comment you type across all six labels.
 
 ---
 
@@ -25,10 +28,10 @@ A fully interactive **Streamlit web app** is included so you can test the classi
 | # | Label | Description |
 |---|---|---|
 | 1 | `toxic` | Generally offensive or harmful content |
-| 2 | `severe_toxic` | Extremely offensive or threatening content |
-| 3 | `obscene` | Explicit or sexually obscene language |
-| 4 | `threat` | Direct threats of violence or harm |
-| 5 | `insult` | Personal insults targeting individuals |
+| 2 | `severe_toxic` | Extremely offensive content |
+| 3 | `obscene` | Explicit or obscene language |
+| 4 | `threat` | Threats of violence or harm |
+| 5 | `insult` | Personal insults |
 | 6 | `identity_hate` | Hate speech targeting identity groups |
 
 ---
@@ -36,89 +39,89 @@ A fully interactive **Streamlit web app** is included so you can test the classi
 ## Methodology
 
 ```
-Raw Comment Text
+Raw comment text
       │
       ▼
- Preprocessing
-  ├─ Lowercase
-  ├─ Remove punctuation & digits
-  ├─ Lemmatisation (WordNet)
-  ├─ Stemming (Porter)
-  └─ Stop word removal
+ Cleaning
+  ├─ Drop malformed rows (labels must be 0/1)
+  ├─ Lowercase, remove punctuation & digits
+  ├─ Lemmatisation (WordNet) + stemming (Porter)
+  └─ Stop word removal, comments up to 400 characters
       │
       ▼
- Feature Extraction
-  ├─ Bag-of-Words  (CountVectorizer)
-  └─ TF-IDF with bigrams (TfidfVectorizer, ngram_range=(1,2))
+ Stratified train / test split (75 / 25)   ← vectorisers are fitted on training text only (no leakage)
       │
       ▼
- Models Compared (Binary Relevance strategy)
-  ├─ Model 1: Multinomial Naïve Bayes         ← BoW features
-  ├─ Model 2: Linear SVM + class weighting    ← TF-IDF features
-  ├─ Model 3: Linear SVM + SMOTE              ← TF-IDF features
-  ├─ Model 4: Classifier Chains (SVM)         ← TF-IDF + bigrams   Best
-  └─ Model 5: SVM + GridSearchCV tuning       ← TF-IDF + bigrams
+ Features
+  ├─ Bag-of-Words (CountVectorizer, 10k terms)
+  ├─ TF-IDF (10k terms)
+  └─ TF-IDF with bigrams (20k terms)
       │
       ▼
- Evaluation
-  ├─ Hamming Loss
-  ├─ Exact Match Accuracy
-  ├─ Macro F1-Score
-  └─ Per-label Confusion Matrices
+ Models
+  ├─ Binary Relevance: Multinomial Naïve Bayes        ← BoW
+  ├─ Binary Relevance: Linear SVM, class_weight       ← TF-IDF
+  ├─ Binary Relevance: Linear SVM + SMOTE             ← TF-IDF
+  ├─ Classifier Chain: Linear SVM                     ← TF-IDF + bigrams   (deployed)
+  └─ Binary Relevance: Linear SVM tuned (GridSearchCV)
+      │
+      ▼
+ Evaluation: Hamming loss, exact match accuracy, macro F1, per-label F1 and confusion matrices
 ```
 
 ---
 
 ## Results
 
+Test set of 28,692 comments.
+
 | Model | Hamming Loss ↓ | Exact Match ↑ | Macro F1 ↑ |
 |---|---|---|---|
-| BR — Multinomial Naïve Bayes (BoW) | ~3.69% | — | — |
-| BR — Linear SVM, balanced (TF-IDF) | ~2.88% | — | — |
-| BR — Linear SVM + SMOTE | — | — | — |
-| **Classifier Chain (TF-IDF + bigrams)** | **Best** | **Best** | **Best** |
-| BR — SVM Tuned (GridSearchCV) | — | — | — |
+| BR - Multinomial Naïve Bayes (BoW) | 3.67% | 87.1% | 0.494 |
+| **BR - Linear SVM, class-balanced (TF-IDF)** | **3.24%** | 86.2% | **0.567** |
+| BR - Linear SVM + SMOTE (TF-IDF) | 5.03% | - | 0.470 |
+| Classifier Chain - Linear SVM (TF-IDF + bigrams) | 3.37% | **87.3%** | 0.562 |
+| BR - Linear SVM tuned (GridSearchCV) | 3.24% | 86.8% | 0.566 |
 
-> Exact results vary slightly with each run due to random sampling. The **Classifier Chain** consistently outperforms Binary Relevance models by capturing label dependencies (e.g. a `severe_toxic` comment is almost always also `toxic`).
+**Per-label F1 (best model per label):** Toxic 0.77 · Obscene 0.81 · Insult 0.69 · Severe Toxic 0.43 · Threat 0.41 · Identity Hate 0.40
+
+**Findings**
+- **Class weighting** helps clearly: Linear SVM with `class_weight='balanced'` beats Naïve Bayes (macro F1 0.567 vs 0.494).
+- **SMOTE hurts** on sparse TF-IDF text (0.470): interpolated text vectors are unrealistic.
+- **Classifier Chains** reach the best exact-match accuracy and almost the same macro F1 as the best model, so the chain is deployed in the app.
+- **Tuning** (grid search on the Toxic label) gives no extra gain. Its `C = 0.1` hurts the chain, so the chain keeps `C = 1.0`.
+- **Rare labels** (threat, identity hate, severe toxic) are the hardest, with only a few hundred examples each.
+
+---
+
+## Streamlit App
+
+- Type or paste a comment, press **ANALYSE**, and see which labels apply and a score for each.
+- Words the model has never seen are treated as clean instead of guessed.
+- The app loads `model.pkl` and `vectoriser.pkl` from the repo. Without them it falls back to a small demo model.
+
+Run locally:
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 ---
 
 ## Project Structure
 
 ```
-Toxic-Comment-Detection/
-├──  Toxic Comment Detection.ipynb   ← full analysis & model training
-├──  app.py                          ← Streamlit demo app
-├──  README.md
-├──  requirements.txt
-├──  LICENSE
-└──  .gitignore
+toxic-comment-detection/
+├── Toxic Comment Detection.ipynb   ← full analysis and model training
+├── app.py                          ← Streamlit app
+├── model.pkl                       ← trained Classifier Chain (created by the notebook)
+├── vectoriser.pkl                  ← fitted TF-IDF vectoriser (created by the notebook)
+├── requirements.txt                ← scikit-learn pinned to the version the model was saved with
+├── README.md
+└── LICENSE
 ```
 
-> `ToxicDataSet.csv`, `model.pkl`, and `vectoriser.pkl` are excluded from the repo (see `.gitignore`). Generate the model files by running the notebook.
-
----
-
-## Requirements
-
-```
-pandas>=1.3
-numpy>=1.21
-matplotlib>=3.5
-seaborn>=0.12
-scikit-learn==1.7.2
-nltk>=3.7
-ydata-profiling>=4.0
-scipy>=1.7
-streamlit>=1.30
-joblib>=1.3
-imbalanced-learn>=0.11
-```
-
-Install all with:
-```bash
-pip install -r requirements.txt
-```
+The dataset (`ToxicDataSet.csv`) is not included. Download it from the Kaggle competition above.
 
 ---
 
@@ -126,12 +129,11 @@ pip install -r requirements.txt
 
 | Priority | Improvement | Expected Impact |
 |---|---|---|
-| 🔴 High | Fine-tune **BERT / RoBERTa** | Large accuracy gains via contextual embeddings |
-| 🔴 High | **SMOTE + class weighting** combined | Better recall on rare labels |
-| 🟡 Medium | **Classifier Chains** with optimised order | Capture label dependencies more effectively |
-| 🟡 Medium | **Hyperparameter tuning** | Optimise C, alpha, feature count |
-| 🟢 Low | **Trigram features** | Marginal gains over bigrams |
-| 🟢 Low | **Error analysis on FP/FN** | Understand remaining failure modes |
+| High | Fine-tune **BERT / DistilBERT** | Contextual embeddings, largest potential gain |
+| High | **Per-label decision thresholds** | Better precision / recall balance on rare labels |
+| Medium | **Calibrated probabilities** (`CalibratedClassifierCV`) | Meaningful confidence scores in the app |
+| Medium | Tune `C` **per label** instead of on Toxic only | Better rare-label F1 |
+| Low | Error analysis on false positives / negatives | Understand remaining failure modes |
 
 ---
 
